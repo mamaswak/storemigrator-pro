@@ -1,0 +1,75 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+model Shop {
+  id             String          @id @default(cuid())
+  shopDomain     String          @unique
+  planType       String          @default("free") // "free" or "pro"
+  planPurchasedAt DateTime?
+  chargeId       String?
+  installedAt    DateTime        @default(now())
+  uninstalledAt  DateTime?
+  migrations     MigrationJob[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model MigrationJob {
+  id              String   @id @default(cuid())
+  shopDomain      String
+  shop            Shop     @relation(fields: [shopDomain], references: [shopDomain])
+  sourcePlatform  String   // "woocommerce", "bigcommerce", "etsy", "csv", etc.
+  status          String   @default("pending") // pending, processing, completed, failed
+  entityType      String   // "products", "customers", "orders", "collections"
+  totalItems      Int      @default(0)
+  processedItems  Int      @default(0)
+  successItems    Int      @default(0)
+  failedItems     Int      @default(0)
+  errorLog        String?  @db.Text
+  sourceFileName  String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shopDomain])
+  @@index([status])
+}
+
+model MigrationLog {
+  id             String   @id @default(cuid())
+  jobId          String
+  level          String   // info, warning, error
+  message        String   @db.Text
+  metadata       String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([jobId])
+}
