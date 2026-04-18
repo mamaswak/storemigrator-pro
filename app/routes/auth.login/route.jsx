@@ -10,17 +10,17 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
+import polarisTranslations from "@shopify/polaris/locales/en.json";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
-import "@shopify/polaris/build/esm/styles.css";
 
-import { login } from "../shopify.server";
-import { loginErrorMessage } from "./auth.login/error.server";
+import { login } from "../../shopify.server";
+import { loginErrorMessage } from "./error.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }) => {
   const errors = loginErrorMessage(await login(request));
-  return json({ errors, polarisTranslations: require("@shopify/polaris/locales/en.json") });
+  return json({ errors, polarisTranslations });
 };
 
 export const action = async ({ request }) => {
