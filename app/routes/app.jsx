@@ -26,6 +26,7 @@ export default function App() {
         <Link to="/app/migrate">New Migration</Link>
         <Link to="/app/history">Migration History</Link>
         <Link to="/app/billing">Upgrade to Pro</Link>
+        <Link to="/app/donate">Support us 💛</Link>
         <Link to="/app/support">Support</Link>
       </NavMenu>
       <Outlet />
