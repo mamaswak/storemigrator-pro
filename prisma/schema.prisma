@@ -2,8 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -73,4 +72,19 @@ model MigrationLog {
   createdAt      DateTime @default(now())
 
   @@index([jobId])
+}
+
+model Donation {
+  id          String    @id @default(cuid())
+  shopDomain  String
+  amount      Float     // USD amount, e.g. 25.00
+  chargeId    String    // Shopify GID, e.g. gid://shopify/AppPurchaseOneTime/12345
+  status      String    @default("PENDING") // PENDING, ACTIVE, DECLINED, EXPIRED
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([shopDomain])
+  @@index([chargeId])
+  @@index([status])
 }
