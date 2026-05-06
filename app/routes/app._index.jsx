@@ -82,14 +82,14 @@ export default function Dashboard() {
               title="You're on the Free plan"
               tone="info"
               action={{
-                content: "Upgrade to Pro — $499 one-time",
+                content: "Upgrade to Pro — $499/year",
                 url: "/app/billing",
               }}
             >
               <p>
                 Free plan includes up to 50 products, 50 customers, and 50 orders.
                 Upgrade to Pro for unlimited migrations, SEO redirects, and
-                priority support.
+                priority support. Cancel anytime.
               </p>
             </Banner>
           </Layout.Section>
