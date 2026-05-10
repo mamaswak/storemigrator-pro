@@ -10,7 +10,6 @@ import {
   Button,
   Badge,
   Banner,
-  List,
   Divider,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
@@ -19,7 +18,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 const PRO_PRICE_USD = 499;
-const PRO_PLAN_NAME = "StoreMigrator Pro - Lifetime License";
+const PRO_PLAN_NAME = "StoreMigrator Pro - Annual";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -34,28 +33,33 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { admin, session, billing } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
   const formData = await request.formData();
   const intent = formData.get("intent");
 
   if (intent === "purchase") {
-    // Create a one-time application charge via GraphQL
+    // Create an annual recurring subscription via GraphQL
     const response = await admin.graphql(
       `#graphql
-      mutation AppPurchaseOneTimeCreate($name: String!, $price: MoneyInput!, $returnUrl: URL!, $test: Boolean) {
-        appPurchaseOneTimeCreate(
-          name: $name,
-          price: $price,
-          returnUrl: $returnUrl,
+      mutation AppSubscriptionCreate(
+        $name: String!
+        $returnUrl: URL!
+        $test: Boolean
+        $lineItems: [AppSubscriptionLineItemInput!]!
+      ) {
+        appSubscriptionCreate(
+          name: $name
+          returnUrl: $returnUrl
           test: $test
+          lineItems: $lineItems
         ) {
           userErrors {
             field
             message
           }
-          appPurchaseOneTime {
+          appSubscription {
             id
             name
             status
@@ -66,15 +70,24 @@ export const action = async ({ request }) => {
       {
         variables: {
           name: PRO_PLAN_NAME,
-          price: { amount: PRO_PRICE_USD, currencyCode: "USD" },
           returnUrl: `${process.env.SHOPIFY_APP_URL}/app/billing/callback?shop=${shopDomain}`,
           test: process.env.NODE_ENV !== "production",
+          lineItems: [
+            {
+              plan: {
+                appRecurringPricingDetails: {
+                  price: { amount: PRO_PRICE_USD, currencyCode: "USD" },
+                  interval: "ANNUAL",
+                },
+              },
+            },
+          ],
         },
       }
     );
 
     const result = await response.json();
-    const data = result.data?.appPurchaseOneTimeCreate;
+    const data = result.data?.appSubscriptionCreate;
 
     if (data?.userErrors?.length > 0) {
       return json({ error: data.userErrors[0].message }, { status: 400 });
@@ -84,7 +97,7 @@ export const action = async ({ request }) => {
       return redirect(data.confirmationUrl);
     }
 
-    return json({ error: "Unable to create charge" }, { status: 500 });
+    return json({ error: "Unable to create subscription" }, { status: 500 });
   }
 
   return json({ error: "Invalid action" }, { status: 400 });
@@ -100,7 +113,7 @@ export default function Billing() {
   return (
     <Page
       title="Upgrade to Pro"
-      subtitle="Unlock unlimited migrations with a one-time payment"
+      subtitle="Unlock unlimited migrations with an annual subscription"
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <Layout>
@@ -116,8 +129,8 @@ export default function Billing() {
           <Layout.Section>
             <Banner tone="success" title="You're on the Pro plan">
               <p>
-                Thank you for supporting StoreMigrator Pro. You have lifetime
-                access to all Pro features.
+                Thank you for supporting StoreMigrator Pro. You have full access
+                to all Pro features.
               </p>
             </Banner>
           </Layout.Section>
@@ -179,11 +192,11 @@ export default function Billing() {
                     $499
                   </Text>
                   <Text variant="bodyMd" as="p" tone="subdued">
-                    one-time
+                    /year
                   </Text>
                 </InlineStack>
                 <Text variant="bodySm" as="p" tone="subdued">
-                  Lifetime access. No recurring charges.
+                  Cancel anytime. Renews annually.
                 </Text>
                 <Divider />
                 <BlockStack gap="200">
@@ -205,7 +218,7 @@ export default function Billing() {
                     loading={isSubmitting}
                     disabled={isPro}
                   >
-                    {isPro ? "You have Pro" : "Upgrade to Pro — $499 one-time"}
+                    {isPro ? "You have Pro" : "Upgrade to Pro — $499/year"}
                   </Button>
                 </Form>
               </BlockStack>
@@ -217,18 +230,18 @@ export default function Billing() {
           <Card>
             <BlockStack gap="300">
               <Text variant="headingMd" as="h2">
-                Why a one-time payment?
+                Why an annual subscription?
               </Text>
               <Text variant="bodyMd" as="p">
-                Migrations are a one-time event for most merchants. You shouldn't
-                pay forever for a service you use once. Pay once, migrate as many
-                times as you need, and keep lifetime access to all Pro features
-                and future updates.
+                Migration tools require ongoing maintenance: API updates, new
+                source platform support, and security patches. The annual plan
+                ensures your migrations keep working as e-commerce platforms
+                evolve.
               </Text>
               <Text variant="bodyMd" as="p">
                 For comparison, migration agencies typically charge $2,000–$5,000
-                for the same service. Our $499 flat rate saves you thousands
-                while giving you full control over the process.
+                for a single migration. Our $499/year saves you thousands and
+                gives you unlimited migrations with full control over the process.
               </Text>
             </BlockStack>
           </Card>
@@ -243,11 +256,11 @@ export default function Billing() {
               <BlockStack gap="300">
                 <BlockStack gap="100">
                   <Text variant="headingSm" as="h3">
-                    Is the $499 really one-time?
+                    Can I cancel anytime?
                   </Text>
                   <Text variant="bodyMd" as="p">
-                    Yes. You pay once and get lifetime access. No monthly fees,
-                    no renewal charges, no surprises.
+                    Yes. Cancel anytime from your Shopify admin. Your access
+                    continues until the end of the billing period.
                   </Text>
                 </BlockStack>
                 <BlockStack gap="100">
