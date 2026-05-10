@@ -1,4 +1,4 @@
-import { json, redirect } from "@remix-run/node";
+import { json } from "@remix-run/node";
 import { useLoaderData, useFetcher } from "@remix-run/react";
 import {
   Page,
@@ -14,11 +14,8 @@ import {
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 
-import { authenticate } from "../shopify.server";
+import { authenticate, PRO_PLAN } from "../shopify.server";
 import prisma from "../db.server";
-
-const PRO_PRICE_USD = 499;
-const PRO_PLAN_NAME = "StoreMigrator Pro - Annual";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -33,63 +30,24 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { billing, session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
   const formData = await request.formData();
   const intent = formData.get("intent");
 
   if (intent === "purchase") {
-    const response = await admin.graphql(
-      `#graphql
-      mutation AppSubscriptionCreate(
-        $name: String!
-        $returnUrl: URL!
-        $test: Boolean
-        $lineItems: [AppSubscriptionLineItemInput!]!
-      ) {
-        appSubscriptionCreate(
-          name: $name
-          returnUrl: $returnUrl
-          test: $test
-          lineItems: $lineItems
-        ) {
-          userErrors { field message }
-          appSubscription { id name status }
-          confirmationUrl
-        }
-      }`,
-      {
-        variables: {
-          name: PRO_PLAN_NAME,
-          returnUrl: `${process.env.SHOPIFY_APP_URL}/app/billing/callback?shop=${shopDomain}`,
-          test: process.env.NODE_ENV !== "production",
-          lineItems: [
-            {
-              plan: {
-                appRecurringPricingDetails: {
-                  price: { amount: PRO_PRICE_USD, currencyCode: "USD" },
-                  interval: "ANNUAL",
-                },
-              },
-            },
-          ],
-        },
-      }
-    );
+    await billing.require({
+      plans: [PRO_PLAN],
+      isTest: process.env.NODE_ENV !== "production",
+      onFailure: async () => billing.request({
+        plan: PRO_PLAN,
+        isTest: process.env.NODE_ENV !== "production",
+        returnUrl: `${process.env.SHOPIFY_APP_URL}/app/billing/callback?shop=${shopDomain}`,
+      }),
+    });
 
-    const result = await response.json();
-    const data = result.data?.appSubscriptionCreate;
-
-    if (data?.userErrors?.length > 0) {
-      return json({ error: data.userErrors[0].message }, { status: 400 });
-    }
-
-    if (data?.confirmationUrl) {
-      return redirect(data.confirmationUrl);
-    }
-
-    return json({ error: "Unable to create subscription" }, { status: 500 });
+    return json({ success: true });
   }
 
   return json({ error: "Invalid action" }, { status: 400 });
