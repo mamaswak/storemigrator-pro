@@ -134,7 +134,6 @@ export default function Billing() {
 
         <Layout.Section>
           <InlineStack gap="400" wrap={false}>
-            {/* Free plan */}
             <Card>
               <BlockStack gap="400">
                 <BlockStack gap="100">
@@ -157,7 +156,6 @@ export default function Billing() {
               </BlockStack>
             </Card>
 
-            {/* Pro plan */}
             <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between">
