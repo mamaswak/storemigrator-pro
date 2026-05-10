@@ -18,11 +18,6 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
 
-  // ============================================================
-  // MANDATORY GDPR COMPLIANCE WEBHOOKS
-  // Required for Shopify App Store approval.
-  // HMAC verification happens automatically inside authenticate.webhook().
-  // ============================================================
   webhooks: {
     CUSTOMERS_DATA_REQUEST: {
       deliveryMethod: DeliveryMethod.Http,
@@ -44,13 +39,12 @@ const shopify = shopifyApp({
 
   hooks: {
     afterAuth: async ({ session }) => {
-      // Register webhooks for this shop after install
       shopify.registerWebhooks({ session });
     },
   },
 
   future: {
-    unstable_newEmbeddedAuthStrategy: true,
+    unstable_newEmbeddedAuthStrategy: false,
     removeRest: true,
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
