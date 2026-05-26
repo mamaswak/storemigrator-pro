@@ -1,5 +1,5 @@
 import { json } from "@remix-run/node";
-import { useLoaderData, useFetcher } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -9,12 +9,11 @@ import {
   InlineStack,
   Button,
   Badge,
-  Banner,
   Divider,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 
-import { authenticate, PRO_PLAN } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export const loader = async ({ request }) => {
@@ -26,70 +25,25 @@ export const loader = async ({ request }) => {
     shop = await prisma.shop.create({ data: { shopDomain } });
   }
 
-  return json({ shop });
-};
+  // Build the Shopify-hosted pricing page URL
+  // Pattern: https://admin.shopify.com/store/{store-handle}/charges/{app-handle}/pricing_plans
+  const storeHandle = shopDomain.replace(".myshopify.com", "");
+  const pricingPageUrl = `https://admin.shopify.com/store/${storeHandle}/charges/store-migrator-pro/pricing_plans`;
 
-export const action = async ({ request }) => {
-  const { billing, session } = await authenticate.admin(request);
-  const shopDomain = session.shop;
-
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-
-  if (intent === "purchase") {
-    await billing.require({
-      plans: [PRO_PLAN],
-      isTest: process.env.NODE_ENV !== "production",
-      onFailure: async () => billing.request({
-        plan: PRO_PLAN,
-        isTest: process.env.NODE_ENV !== "production",
-        returnUrl: `${process.env.SHOPIFY_APP_URL}/app/billing/callback?shop=${shopDomain}`,
-      }),
-    });
-
-    return json({ success: true });
-  }
-
-  return json({ error: "Invalid action" }, { status: 400 });
+  return json({ shop, pricingPageUrl });
 };
 
 export default function Billing() {
-  const { shop } = useLoaderData();
-  const fetcher = useFetcher();
-  const isSubmitting = fetcher.state === "submitting";
+  const { shop, pricingPageUrl } = useLoaderData();
   const isPro = shop.planType === "pro";
-  const error = fetcher.data?.error;
-
-  const handleUpgrade = () => {
-    fetcher.submit({ intent: "purchase" }, { method: "POST" });
-  };
 
   return (
     <Page
-      title="Upgrade to Pro"
-      subtitle="Unlock unlimited migrations with an annual subscription"
+      title="Plans & Pricing"
+      subtitle="Choose the plan that fits your migration needs"
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <Layout>
-        {error && (
-          <Layout.Section>
-            <Banner tone="critical" title="Could not start checkout">
-              <p>{error}</p>
-            </Banner>
-          </Layout.Section>
-        )}
-
-        {isPro && (
-          <Layout.Section>
-            <Banner tone="success" title="You're on the Pro plan">
-              <p>
-                Thank you for supporting StoreMigrator Pro. You have full access
-                to all Pro features.
-              </p>
-            </Banner>
-          </Layout.Section>
-        )}
-
         <Layout.Section>
           <InlineStack gap="400" wrap={false}>
             <Card>
@@ -108,51 +62,56 @@ export default function Billing() {
                   <PlanFeature>Up to 50 customers</PlanFeature>
                   <PlanFeature>Up to 50 orders</PlanFeature>
                   <PlanFeature>CSV imports</PlanFeature>
-                  <PlanFeature>Basic email support</PlanFeature>
+                  <PlanFeature>Email support</PlanFeature>
                 </BlockStack>
-                <Button disabled fullWidth>{isPro ? "Downgraded" : "Current plan"}</Button>
+                {!isPro && <Badge tone="success">Current plan</Badge>}
               </BlockStack>
             </Card>
 
             <Card>
               <BlockStack gap="400">
-                <InlineStack align="space-between">
-                  <BlockStack gap="100">
-                    <InlineStack gap="200" blockAlign="center">
-                      <Text variant="headingLg" as="h2">Pro</Text>
-                      <Badge tone="success">Most popular</Badge>
-                    </InlineStack>
-                    <Text variant="bodyMd" as="p" tone="subdued">For serious migrations and large catalogs</Text>
-                  </BlockStack>
+                <InlineStack gap="200" blockAlign="center">
+                  <Text variant="headingLg" as="h2">Pro Annual</Text>
+                  {isPro && <Badge tone="success">Active</Badge>}
                 </InlineStack>
+                <Text variant="bodyMd" as="p" tone="subdued">For serious migrations and large catalogs</Text>
                 <InlineStack gap="100" blockAlign="baseline">
                   <Text variant="heading2xl" as="p">$499</Text>
                   <Text variant="bodyMd" as="p" tone="subdued">/year</Text>
                 </InlineStack>
-                <Text variant="bodySm" as="p" tone="subdued">Cancel anytime. Renews annually.</Text>
+                <Text variant="bodySm" as="p" tone="subdued">Annual subscription. Cancel anytime.</Text>
                 <Divider />
                 <BlockStack gap="200">
-                  <PlanFeature>Unlimited products, customers, orders</PlanFeature>
-                  <PlanFeature>All source platforms (140+)</PlanFeature>
+                  <PlanFeature>Unlimited products, customers, and orders</PlanFeature>
+                  <PlanFeature>All source platforms supported</PlanFeature>
                   <PlanFeature>SEO-preserving 301 redirects</PlanFeature>
-                  <PlanFeature>Metafields and custom attributes</PlanFeature>
+                  <PlanFeature>Custom field and metafield mapping</PlanFeature>
                   <PlanFeature>Bulk image migration</PlanFeature>
-                  <PlanFeature>Collection and category mapping</PlanFeature>
                   <PlanFeature>Priority email support</PlanFeature>
-                  <PlanFeature>Migration validation reports</PlanFeature>
                 </BlockStack>
                 <Button
+                  url={pricingPageUrl}
+                  target="_top"
                   variant="primary"
                   fullWidth
-                  loading={isSubmitting}
                   disabled={isPro}
-                  onClick={handleUpgrade}
                 >
-                  {isPro ? "You have Pro" : "Upgrade to Pro — $499/year"}
+                  {isPro ? "You're on Pro" : "Upgrade to Pro Annual"}
                 </Button>
               </BlockStack>
             </Card>
           </InlineStack>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <Text variant="headingMd" as="h2">How billing works</Text>
+              <Text variant="bodyMd" as="p">
+                StoreMigrator Pro uses Shopify's secure billing system. When you upgrade, you'll be taken to Shopify's pricing page to review and approve the charge. All charges appear on your regular Shopify bill, and you can cancel anytime from your Shopify admin.
+              </Text>
+            </BlockStack>
+          </Card>
         </Layout.Section>
       </Layout>
     </Page>
