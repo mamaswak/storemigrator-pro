@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { json, redirect, unstable_parseMultipartFormData, unstable_createMemoryUploadHandler } from "@remix-run/node";
 import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import {
@@ -104,9 +104,19 @@ export default function Migrate() {
   const [sourcePlatform, setSourcePlatform] = useState("woocommerce");
   const [entityType, setEntityType] = useState("products");
   const [file, setFile] = useState(null);
+  const fileInputRef = useRef(null);
 
   const handleDrop = useCallback(
-    (_droppedFiles, acceptedFiles) => setFile(acceptedFiles[0]),
+    (_droppedFiles, acceptedFiles) => {
+      if (!acceptedFiles.length) return;
+      setFile(acceptedFiles[0]);
+      // Attach the file to the real input so it submits as multipart form data
+      if (fileInputRef.current) {
+        const dt = new DataTransfer();
+        dt.items.add(acceptedFiles[0]);
+        fileInputRef.current.files = dt.files;
+      }
+    },
     []
   );
 
@@ -212,6 +222,14 @@ export default function Migrate() {
                   <Text variant="headingMd" as="h2">
                     Step 3: Upload your export file
                   </Text>
+                  {/* Hidden real file input — populated via DataTransfer on drop */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    name="file"
+                    accept=".csv,.json,.xml"
+                    style={{ display: "none" }}
+                  />
                   <DropZone
                     accept=".csv,.json,.xml"
                     type="file"
@@ -236,13 +254,6 @@ export default function Migrate() {
                       />
                     )}
                   </DropZone>
-                  {file && (
-                    <input
-                      type="hidden"
-                      name="file"
-                      value={file.name}
-                    />
-                  )}
                   <Text variant="bodySm" as="p" tone="subdued">
                     Export your data from {platformOptions.find(o => o.value === sourcePlatform)?.label} and upload the file here.
                     Need help? See our{" "}
