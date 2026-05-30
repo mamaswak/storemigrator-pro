@@ -1,5 +1,5 @@
 import { json } from "@remix-run/node";
-import { useLoaderData, Form, useNavigation, useRevalidator } from "@remix-run/react";
+import { useLoaderData, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
 import {
   Page,
@@ -8,18 +8,15 @@ import {
   Text,
   BlockStack,
   InlineStack,
-  Button,
   Badge,
   Banner,
   ProgressBar,
   DescriptionList,
-  Divider,
   Box,
 } from "@shopify/polaris";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { runMigrationJob } from "../lib/migration-runner.server";
 
 export const loader = async ({ request, params }) => {
   const { session } = await authenticate.admin(request);
@@ -33,66 +30,22 @@ export const loader = async ({ request, params }) => {
     throw new Response("Migration job not found", { status: 404 });
   }
 
-  // Fetch audit logs for this job
   const logs = await prisma.migrationLog.findMany({
     where: { jobId: params.jobId },
     orderBy: { createdAt: "asc" },
-    take: 100, // Limit to last 100 logs for display
+    take: 100,
   });
 
   return json({ job, logs });
 };
 
-export const action = async ({ request, params }) => {
-  const { admin, session } = await authenticate.admin(request);
-  const shopDomain = session.shop;
-
-  const job = await prisma.migrationJob.findFirst({
-    where: { id: params.jobId, shopDomain },
-  });
-
-  if (!job) {
-    return json({ error: "Job not found" }, { status: 404 });
-  }
-
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-
-  if (intent === "start") {
-    // Retrieve parsed rows from cache
-    const parsedRows = global.migrationRowsCache?.[job.id] || [];
-
-    if (parsedRows.length === 0) {
-      return json(
-        { error: "No data found for this migration. Please upload the file again." },
-        { status: 400 }
-      );
-    }
-
-    // Kick off the migration (async, but we update status immediately)
-    await prisma.migrationJob.update({
-      where: { id: job.id },
-      data: { status: "processing", startedAt: new Date() },
-    });
-
-    // In a real app this runs via a background worker queue
-    runMigrationJob(job.id, admin, parsedRows).catch((err) => {
-      console.error("Migration failed:", err);
-    });
-  }
-
-  return json({ success: true });
-};
-
 export default function MigrationDetail() {
   const { job, logs } = useLoaderData();
-  const navigation = useNavigation();
   const revalidator = useRevalidator();
-  const isSubmitting = navigation.state === "submitting";
 
-  // Poll for updates every 2 seconds while processing
+  // Poll every 2 seconds while the job is active
   useEffect(() => {
-    if (job.status === "processing") {
+    if (job.status === "processing" || job.status === "pending") {
       const interval = setInterval(() => {
         revalidator.revalidate();
       }, 2000);
@@ -105,7 +58,7 @@ export default function MigrationDetail() {
     failed: "critical",
     processing: "info",
     pending: "attention",
-  }[job.status];
+  }[job.status] ?? "attention";
 
   const progress =
     job.totalItems > 0
@@ -183,12 +136,9 @@ export default function MigrationDetail() {
               )}
 
               {job.status === "pending" && (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="start" />
-                  <Button submit variant="primary" loading={isSubmitting}>
-                    Start migration now
-                  </Button>
-                </Form>
+                <Banner tone="info">
+                  <p>Migration is queued and will start shortly. This page will update automatically.</p>
+                </Banner>
               )}
             </BlockStack>
           </Card>

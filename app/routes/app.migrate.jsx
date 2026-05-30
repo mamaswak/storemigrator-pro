@@ -20,6 +20,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { parseMigrationFile } from "../lib/migration-parser.server";
+import { runMigrationJob } from "../lib/migration-runner.server";
 
 const FREE_LIMIT = 50;
 
@@ -78,18 +79,17 @@ export const action = async ({ request }) => {
       shopDomain,
       sourcePlatform,
       entityType,
-      status: "pending",
+      status: "processing",
+      startedAt: new Date(),
       totalItems: parsed.totalRows,
       sourceFileName: file.name,
     },
   });
 
-  // Store parsed rows in a global map for the runner to access
-  // In production, this should be stored in S3 or a queue service
-  if (!global.migrationRowsCache) {
-    global.migrationRowsCache = {};
-  }
-  global.migrationRowsCache[job.id] = parsed.rows;
+  // Fire migration immediately — rows and admin session are both available in this request
+  runMigrationJob(job.id, admin, parsed.rows).catch((err) => {
+    console.error("Migration job error:", err);
+  });
 
   return redirect(`/app/migrate/${job.id}`);
 };
