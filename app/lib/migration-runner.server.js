@@ -194,6 +194,10 @@ export async function createShopifyProduct(admin, row, sourcePlatform) {
   );
 
   const result = await response.json();
+  if (!result.data?.productCreate) {
+    const msg = result.errors?.[0]?.message || "GraphQL error creating product";
+    throw new Error(msg);
+  }
   return result.data.productCreate;
 }
 
@@ -228,6 +232,10 @@ export async function createShopifyCustomer(admin, row) {
   );
 
   const result = await response.json();
+  if (!result.data?.customerCreate) {
+    const msg = result.errors?.[0]?.message || "GraphQL error creating customer";
+    throw new Error(msg);
+  }
   return result.data.customerCreate;
 }
 
@@ -274,6 +282,11 @@ export async function createShopifyOrder(admin, row, sourcePlatform) {
 
   const draftResult = await draftOrderResponse.json();
 
+  if (!draftResult.data?.draftOrderCreate) {
+    const msg = draftResult.errors?.[0]?.message || "GraphQL error creating draft order";
+    throw new Error(msg);
+  }
+
   if (draftResult.data.draftOrderCreate.userErrors?.length > 0) {
     return {
       userErrors: draftResult.data.draftOrderCreate.userErrors,
@@ -306,6 +319,11 @@ export async function createShopifyOrder(admin, row, sourcePlatform) {
   );
 
   const completeResult = await completeResponse.json();
+
+  if (!completeResult.data?.draftOrderComplete) {
+    const msg = completeResult.errors?.[0]?.message || "GraphQL error completing draft order";
+    throw new Error(msg);
+  }
 
   if (completeResult.data.draftOrderComplete.userErrors?.length > 0) {
     return {
@@ -349,5 +367,9 @@ export async function createShopifyCollection(admin, row) {
   );
 
   const result = await response.json();
+  if (!result.data?.collectionCreate) {
+    const msg = result.errors?.[0]?.message || "GraphQL error creating collection";
+    throw new Error(msg);
+  }
   return result.data.collectionCreate;
 }

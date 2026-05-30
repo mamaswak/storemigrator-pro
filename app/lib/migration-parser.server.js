@@ -56,14 +56,14 @@ export function normalizeProduct(row, sourcePlatform) {
     row.body_html ||
     "";
 
-  const price = parseFloat(
+  const rawPrice =
     row.Price ||
-      row.price ||
-      row["Regular price"] ||
-      row.regular_price ||
-      row.variant_price ||
-      0
-  );
+    row.price ||
+    row["Regular price"] ||
+    row.regular_price ||
+    row.variant_price ||
+    "0";
+  const price = parseFloat(rawPrice) || 0;
 
   const sku = row.SKU || row.sku || row.Sku || "";
   const inventory = parseInt(
@@ -85,7 +85,6 @@ export function normalizeProduct(row, sourcePlatform) {
       {
         sku: sku.toString().trim(),
         price: price.toFixed(2),
-        inventoryQuantity: inventory,
       },
     ],
     images: images.map((src) => ({ src })),
