@@ -20,7 +20,6 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { parseMigrationFile } from "../lib/migration-parser.server";
-import { runMigrationJob } from "../lib/migration-runner.server";
 
 const FREE_LIMIT = 50;
 
@@ -37,14 +36,14 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
   const shop = await prisma.shop.findUnique({ where: { shopDomain } });
   const isPro = shop?.planType === "pro";
 
   const uploadHandler = unstable_createMemoryUploadHandler({
-    maxPartSize: 50_000_000, // 50MB
+    maxPartSize: 50_000_000,
   });
 
   const formData = await unstable_parseMultipartFormData(request, uploadHandler);
@@ -63,7 +62,6 @@ export const action = async ({ request }) => {
     return json({ error: parsed.error }, { status: 400 });
   }
 
-  // Enforce free plan limit
   if (!isPro && parsed.totalRows > FREE_LIMIT) {
     return json(
       {
@@ -74,24 +72,19 @@ export const action = async ({ request }) => {
     );
   }
 
+  // Only store the job + CSV rows — migration runs from a separate simple POST
+  // (multipart requests don't reliably carry the App Bridge session token)
   const job = await prisma.migrationJob.create({
     data: {
       shopDomain,
       sourcePlatform,
       entityType,
-      status: "processing",
-      startedAt: new Date(),
+      status: "pending",
       totalItems: parsed.totalRows,
       sourceFileName: file.name,
       parsedData: JSON.stringify(parsed.rows),
     },
   });
-
-  try {
-    await runMigrationJob(job.id, admin, parsed.rows);
-  } catch (err) {
-    console.error("[migration] error:", err instanceof Error ? err.stack : String(err));
-  }
 
   return redirect(`/app/migrate/${job.id}`);
 };
