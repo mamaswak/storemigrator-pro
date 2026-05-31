@@ -6,25 +6,7 @@ import {
   normalizeCollection,
 } from "./migration-parser.server";
 
-const API_VERSION = "2025-01";
-
-async function shopifyGQL(shop, accessToken, query, variables) {
-  const res = await fetch(`https://${shop}/admin/api/${API_VERSION}/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": accessToken,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Shopify API ${res.status}: ${text.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
-export async function runMigrationJob(jobId, shop, accessToken, parsedRows) {
+export async function runMigrationJob(jobId, admin, parsedRows) {
   const job = await prisma.migrationJob.findUnique({ where: { id: jobId } });
   if (!job) return;
 
@@ -50,16 +32,16 @@ export async function runMigrationJob(jobId, shop, accessToken, parsedRows) {
           let result;
           switch (job.entityType) {
             case "products":
-              result = await createShopifyProduct(shop, accessToken, row, job.sourcePlatform);
+              result = await createShopifyProduct(admin, row, job.sourcePlatform);
               break;
             case "customers":
-              result = await createShopifyCustomer(shop, accessToken, row);
+              result = await createShopifyCustomer(admin, row);
               break;
             case "orders":
-              result = await createShopifyOrder(shop, accessToken, row, job.sourcePlatform);
+              result = await createShopifyOrder(admin, row, job.sourcePlatform);
               break;
             case "collections":
-              result = await createShopifyCollection(shop, accessToken, row);
+              result = await createShopifyCollection(admin, row);
               break;
             default:
               throw new Error(`Unknown entity type: ${job.entityType}`);
@@ -67,17 +49,10 @@ export async function runMigrationJob(jobId, shop, accessToken, parsedRows) {
 
           if (result.userErrors && result.userErrors.length > 0) {
             failed++;
-            const errorMessages = result.userErrors
-              .map((e) => `${e.field}: ${e.message}`)
-              .join("; ");
-            console.error(`[migration] row ${rowIndex + 1} userErrors:`, errorMessages);
+            const msg = result.userErrors.map((e) => `${e.field}: ${e.message}`).join("; ");
+            console.error(`[migration] row ${rowIndex + 1} userErrors:`, msg);
             await prisma.migrationLog.create({
-              data: {
-                jobId,
-                level: "error",
-                message: `Row ${rowIndex + 1}: ${errorMessages}`,
-                metadata: JSON.stringify({ userErrors: result.userErrors }),
-              },
+              data: { jobId, level: "error", message: `Row ${rowIndex + 1}: ${msg}` },
             });
           } else {
             succeeded++;
@@ -93,14 +68,10 @@ export async function runMigrationJob(jobId, shop, accessToken, parsedRows) {
           }
         } catch (err) {
           failed++;
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
           console.error(`[migration] row ${rowIndex + 1} error:`, msg);
           await prisma.migrationLog.create({
-            data: {
-              jobId,
-              level: "error",
-              message: `Row ${rowIndex + 1}: ${msg}`,
-            },
+            data: { jobId, level: "error", message: `Row ${rowIndex + 1}: ${msg}` },
           });
         }
       }
@@ -110,7 +81,6 @@ export async function runMigrationJob(jobId, shop, accessToken, parsedRows) {
         where: { id: jobId },
         data: { processedItems: processed, successItems: succeeded, failedItems: failed },
       });
-
       await new Promise((r) => setTimeout(r, 200));
     }
 
@@ -139,9 +109,15 @@ export async function runMigrationJob(jobId, shop, accessToken, parsedRows) {
   }
 }
 
-async function createShopifyProduct(shop, accessToken, row, sourcePlatform) {
+async function gql(admin, query, variables) {
+  const response = await admin.graphql(query, { variables });
+  const result = await response.json();
+  return result;
+}
+
+async function createShopifyProduct(admin, row, sourcePlatform) {
   const input = normalizeProduct(row, sourcePlatform);
-  const result = await shopifyGQL(shop, accessToken,
+  const result = await gql(admin,
     `mutation productCreate($input: ProductInput!) {
       productCreate(input: $input) {
         product { id title handle }
@@ -156,10 +132,10 @@ async function createShopifyProduct(shop, accessToken, row, sourcePlatform) {
   return result.data.productCreate;
 }
 
-async function createShopifyCustomer(shop, accessToken, row) {
+async function createShopifyCustomer(admin, row) {
   const input = normalizeCustomer(row);
   if (!input.email) throw new Error("Customer email is required");
-  const result = await shopifyGQL(shop, accessToken,
+  const result = await gql(admin,
     `mutation customerCreate($input: CustomerInput!) {
       customerCreate(input: $input) {
         customer { id email firstName lastName }
@@ -174,12 +150,12 @@ async function createShopifyCustomer(shop, accessToken, row) {
   return result.data.customerCreate;
 }
 
-async function createShopifyOrder(shop, accessToken, row, sourcePlatform) {
+async function createShopifyOrder(admin, row, sourcePlatform) {
   const input = normalizeOrder(row, sourcePlatform);
   if (!input.lineItems?.length) throw new Error("Order must have at least one line item");
   if (!input.customer?.email) throw new Error("Order customer email is required");
 
-  const draftResult = await shopifyGQL(shop, accessToken,
+  const draftResult = await gql(admin,
     `mutation draftOrderCreate($input: DraftOrderInput!) {
       draftOrderCreate(input: $input) {
         draftOrder { id }
@@ -196,7 +172,7 @@ async function createShopifyOrder(shop, accessToken, row, sourcePlatform) {
   }
 
   const draftOrderId = draftResult.data.draftOrderCreate.draftOrder.id;
-  const completeResult = await shopifyGQL(shop, accessToken,
+  const completeResult = await gql(admin,
     `mutation draftOrderComplete($id: ID!) {
       draftOrderComplete(id: $id) {
         order { id orderNumber }
@@ -214,10 +190,10 @@ async function createShopifyOrder(shop, accessToken, row, sourcePlatform) {
   return { order: completeResult.data.draftOrderComplete.order, userErrors: [] };
 }
 
-async function createShopifyCollection(shop, accessToken, row) {
+async function createShopifyCollection(admin, row) {
   const input = normalizeCollection(row);
   if (!input.title) throw new Error("Collection title is required");
-  const result = await shopifyGQL(shop, accessToken,
+  const result = await gql(admin,
     `mutation collectionCreate($input: CollectionInput!) {
       collectionCreate(input: $input) {
         collection { id title handle }
