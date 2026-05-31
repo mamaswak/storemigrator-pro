@@ -1,5 +1,5 @@
 import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, useNavigate } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -28,6 +28,7 @@ export const loader = async ({ request }) => {
 
 export default function History() {
   const { jobs } = useLoaderData();
+  const navigate = useNavigate();
   const resourceName = { singular: "migration", plural: "migrations" };
 
   const { selectedResources, allResourcesSelected, handleSelectionChange } =
@@ -69,9 +70,7 @@ export default function History() {
         key={job.id}
         selected={selectedResources.includes(job.id)}
         position={index}
-        onClick={() => {
-          window.location.href = `/app/migrate/${job.id}`;
-        }}
+        onClick={() => navigate(`/app/migrate/${job.id}`)}
       >
         <IndexTable.Cell>
           <Text variant="bodyMd" fontWeight="semibold" as="span">
