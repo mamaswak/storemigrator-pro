@@ -10,6 +10,7 @@ import {
   Button,
   Badge,
   Divider,
+  Icon,
 } from "@shopify/polaris";
 import { CheckIcon } from "@shopify/polaris-icons";
 
@@ -121,9 +122,7 @@ export default function Billing() {
 function PlanFeature({ children }) {
   return (
     <InlineStack gap="200" blockAlign="start" wrap={false}>
-      <div style={{ marginTop: "2px", flexShrink: 0 }}>
-        <CheckIcon width="16" height="16" />
-      </div>
+      <Icon source={CheckIcon} tone="success" />
       <Text variant="bodyMd" as="p">{children}</Text>
     </InlineStack>
   );

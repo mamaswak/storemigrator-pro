@@ -12,12 +12,12 @@ export const loader = async ({ request }) => {
     return redirect("/app/billing?error=no_charge_id");
   }
 
-  // Verify the charge status via GraphQL
+  // Annual billing creates AppSubscription, not AppPurchaseOneTime
   const response = await admin.graphql(
     `#graphql
-    query getAppPurchase($id: ID!) {
+    query getAppSubscription($id: ID!) {
       node(id: $id) {
-        ... on AppPurchaseOneTime {
+        ... on AppSubscription {
           id
           name
           status
@@ -27,16 +27,15 @@ export const loader = async ({ request }) => {
     }`,
     {
       variables: {
-        id: `gid://shopify/AppPurchaseOneTime/${chargeId}`,
+        id: `gid://shopify/AppSubscription/${chargeId}`,
       },
     }
   );
 
   const result = await response.json();
-  const purchase = result.data?.node;
+  const subscription = result.data?.node;
 
-  if (purchase?.status === "ACTIVE") {
-    // Upgrade shop to Pro
+  if (subscription?.status === "ACTIVE") {
     await prisma.shop.upsert({
       where: { shopDomain },
       update: {
