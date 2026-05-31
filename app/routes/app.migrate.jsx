@@ -17,7 +17,7 @@ import {
   Box,
 } from "@shopify/polaris";
 
-import { authenticate, unauthenticated } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { parseMigrationFile } from "../lib/migration-parser.server";
 import { runMigrationJob } from "../lib/migration-runner.server";
@@ -37,7 +37,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
   const shop = await prisma.shop.findUnique({ where: { shopDomain } });
@@ -87,13 +87,11 @@ export const action = async ({ request }) => {
     },
   });
 
-  // Use unauthenticated.admin — uses the stored offline token, no token exchange
-  const { admin: offlineAdmin } = await unauthenticated.admin(shopDomain);
-
+  // Pass access token directly — bypasses the SDK auth layer entirely
   try {
-    await runMigrationJob(job.id, offlineAdmin, parsed.rows);
+    await runMigrationJob(job.id, shopDomain, session.accessToken, parsed.rows);
   } catch (err) {
-    console.error("[migration] error:", err instanceof Error ? err.message : String(err));
+    console.error("[migration] error:", err instanceof Error ? err.stack : String(err));
   }
 
   return redirect(`/app/migrate/${job.id}`);
