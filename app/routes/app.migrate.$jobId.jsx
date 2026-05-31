@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
-import { useLoaderData, useSubmit, useRevalidator } from "@remix-run/react";
-import { useEffect, useRef } from "react";
+import { useLoaderData, useRevalidator } from "@remix-run/react";
+import { useEffect } from "react";
 import {
   Page,
   Layout,
@@ -17,7 +17,6 @@ import {
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { runMigrationJob } from "../lib/migration-runner.server";
 
 export const loader = async ({ request, params }) => {
   const { session } = await authenticate.admin(request);
@@ -42,62 +41,9 @@ export const loader = async ({ request, params }) => {
   return json({ job: jobForClient, logs });
 };
 
-export const action = async ({ request, params }) => {
-  const { admin, session } = await authenticate.admin(request);
-  const shopDomain = session.shop;
-
-  const job = await prisma.migrationJob.findFirst({
-    where: { id: params.jobId, shopDomain },
-  });
-
-  if (!job || job.status !== "pending") {
-    return json({ ok: true });
-  }
-
-  const parsedRows = job.parsedData ? JSON.parse(job.parsedData) : [];
-
-  if (parsedRows.length === 0) {
-    await prisma.migrationJob.update({
-      where: { id: job.id },
-      data: { status: "failed", completedAt: new Date() },
-    });
-    await prisma.migrationLog.create({
-      data: { jobId: job.id, level: "error", message: "No parsed data found — please upload the file again." },
-    });
-    return json({ ok: true });
-  }
-
-  await prisma.migrationJob.update({
-    where: { id: job.id },
-    data: { status: "processing", startedAt: new Date() },
-  });
-
-  // Await the migration synchronously so it completes before the response is sent
-  try {
-    console.log(`[migration] starting job ${job.id} with ${parsedRows.length} rows`);
-    await runMigrationJob(job.id, admin, parsedRows);
-    console.log(`[migration] job ${job.id} finished`);
-  } catch (err) {
-    console.error(`[migration] job ${job.id} threw:`, err);
-  }
-
-  return json({ ok: true });
-};
-
 export default function MigrationDetail() {
   const { job, logs } = useLoaderData();
-  const submit = useSubmit();
-  const navigation = useNavigation();
   const revalidator = useRevalidator();
-  const startedRef = useRef(false);
-
-  // Auto-trigger start on first render if job is pending
-  useEffect(() => {
-    if (job.status === "pending" && !startedRef.current) {
-      startedRef.current = true;
-      submit({}, { method: "post", action: `/app/migrate/${job.id}` });
-    }
-  }, [job.id, job.status, submit]);
 
   // Poll every 2 seconds while active
   useEffect(() => {
