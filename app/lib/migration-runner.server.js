@@ -97,7 +97,7 @@ export async function runMigrationJob(jobId, admin, parsedRows) {
           }
         } catch (err) {
           failed++;
-          console.error(`[migration] row ${rowIndex + 1} threw:`, err.message);
+          console.error(`[migration] row ${rowIndex + 1} threw:`, err instanceof Error ? err.message : JSON.stringify(err));
           await prisma.migrationLog.create({
             data: {
               jobId,

@@ -17,7 +17,7 @@ import {
   Box,
 } from "@shopify/polaris";
 
-import { authenticate } from "../shopify.server";
+import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import { parseMigrationFile } from "../lib/migration-parser.server";
 import { runMigrationJob } from "../lib/migration-runner.server";
@@ -87,11 +87,13 @@ export const action = async ({ request }) => {
     },
   });
 
-  // Run synchronously here — admin session is guaranteed valid in this request
+  // Use unauthenticated.admin — uses the stored offline token, no token exchange
+  const { admin: offlineAdmin } = await unauthenticated.admin(shopDomain);
+
   try {
-    await runMigrationJob(job.id, admin, parsed.rows);
+    await runMigrationJob(job.id, offlineAdmin, parsed.rows);
   } catch (err) {
-    console.error("[migration] upload action error:", err);
+    console.error("[migration] error:", err instanceof Error ? err.message : String(err));
   }
 
   return redirect(`/app/migrate/${job.id}`);
