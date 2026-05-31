@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
-import { useLoaderData, useRevalidator } from "@remix-run/react";
-import { useEffect } from "react";
+import { useLoaderData, useSubmit, useNavigation, useRevalidator } from "@remix-run/react";
+import { useEffect, useRef } from "react";
 import {
   Page,
   Layout,
@@ -17,6 +17,7 @@ import {
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { runMigrationJob } from "../lib/migration-runner.server";
 
 export const loader = async ({ request, params }) => {
   const { session } = await authenticate.admin(request);
@@ -36,14 +37,65 @@ export const loader = async ({ request, params }) => {
     take: 100,
   });
 
-  return json({ job, logs });
+  // Don't send parsedData to the client — it can be large
+  const { parsedData: _, ...jobForClient } = job;
+  return json({ job: jobForClient, logs });
+};
+
+export const action = async ({ request, params }) => {
+  const { admin, session } = await authenticate.admin(request);
+  const shopDomain = session.shop;
+
+  const job = await prisma.migrationJob.findFirst({
+    where: { id: params.jobId, shopDomain },
+  });
+
+  if (!job || job.status !== "pending") {
+    return json({ ok: true });
+  }
+
+  const parsedRows = job.parsedData ? JSON.parse(job.parsedData) : [];
+
+  if (parsedRows.length === 0) {
+    await prisma.migrationJob.update({
+      where: { id: job.id },
+      data: { status: "failed", completedAt: new Date() },
+    });
+    await prisma.migrationLog.create({
+      data: { jobId: job.id, level: "error", message: "No parsed data found — please upload the file again." },
+    });
+    return json({ ok: true });
+  }
+
+  await prisma.migrationJob.update({
+    where: { id: job.id },
+    data: { status: "processing", startedAt: new Date() },
+  });
+
+  // Run with a fresh admin session from this real HTTP request
+  runMigrationJob(job.id, admin, parsedRows).catch((err) => {
+    console.error("Migration job error:", err);
+  });
+
+  return json({ ok: true });
 };
 
 export default function MigrationDetail() {
   const { job, logs } = useLoaderData();
+  const submit = useSubmit();
+  const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const startedRef = useRef(false);
 
-  // Poll every 2 seconds while the job is active
+  // Auto-trigger start on first render if job is pending
+  useEffect(() => {
+    if (job.status === "pending" && !startedRef.current) {
+      startedRef.current = true;
+      submit({}, { method: "post", action: `/app/migrate/${job.id}` });
+    }
+  }, [job.id, job.status, submit]);
+
+  // Poll every 2 seconds while active
   useEffect(() => {
     if (job.status === "processing" || job.status === "pending") {
       const interval = setInterval(() => {
@@ -75,16 +127,15 @@ export default function MigrationDetail() {
           {job.status === "completed" && (
             <Banner tone="success" title="Migration completed successfully">
               <p>
-                {job.successItems} of {job.totalItems} items were imported
-                successfully.
+                {job.successItems} of {job.totalItems} items imported.
                 {job.failedItems > 0 &&
-                  ` ${job.failedItems} items failed — see the audit trail below.`}
+                  ` ${job.failedItems} failed — see the audit trail below.`}
               </p>
             </Banner>
           )}
           {job.status === "failed" && (
             <Banner tone="critical" title="Migration failed">
-              <p>The migration encountered an error and could not complete. Check the audit trail for details.</p>
+              <p>Check the audit trail below for details.</p>
             </Banner>
           )}
         </Layout.Section>
@@ -104,14 +155,8 @@ export default function MigrationDetail() {
                   { term: "Source", description: job.sourcePlatform },
                   { term: "Data type", description: job.entityType },
                   { term: "File", description: job.sourceFileName || "—" },
-                  {
-                    term: "Total items",
-                    description: job.totalItems.toLocaleString(),
-                  },
-                  {
-                    term: "Created",
-                    description: new Date(job.createdAt).toLocaleString(),
-                  },
+                  { term: "Total items", description: job.totalItems.toLocaleString() },
+                  { term: "Created", description: new Date(job.createdAt).toLocaleString() },
                   {
                     term: "Completed",
                     description: job.completedAt
@@ -121,24 +166,16 @@ export default function MigrationDetail() {
                 ]}
               />
 
-              {job.status === "processing" && (
+              {(job.status === "processing" || job.status === "pending") && (
                 <BlockStack gap="200">
                   <InlineStack align="space-between">
-                    <Text variant="bodyMd" as="p">
-                      Progress
-                    </Text>
+                    <Text variant="bodyMd" as="p">Progress</Text>
                     <Text variant="bodyMd" as="p">
                       {job.processedItems}/{job.totalItems} ({progress}%)
                     </Text>
                   </InlineStack>
                   <ProgressBar progress={progress} />
                 </BlockStack>
-              )}
-
-              {job.status === "pending" && (
-                <Banner tone="info">
-                  <p>Migration is queued and will start shortly. This page will update automatically.</p>
-                </Banner>
               )}
             </BlockStack>
           </Card>
@@ -148,22 +185,16 @@ export default function MigrationDetail() {
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
-                <Text variant="headingMd" as="h2">
-                  Results
-                </Text>
+                <Text variant="headingMd" as="h2">Results</Text>
                 <InlineStack gap="400">
                   <BlockStack gap="100">
-                    <Text variant="bodySm" as="p" tone="subdued">
-                      Successful
-                    </Text>
+                    <Text variant="bodySm" as="p" tone="subdued">Successful</Text>
                     <Text variant="headingLg" as="p" tone="success">
                       {job.successItems.toLocaleString()}
                     </Text>
                   </BlockStack>
                   <BlockStack gap="100">
-                    <Text variant="bodySm" as="p" tone="subdued">
-                      Failed
-                    </Text>
+                    <Text variant="bodySm" as="p" tone="subdued">Failed</Text>
                     <Text
                       variant="headingLg"
                       as="p"
@@ -182,9 +213,7 @@ export default function MigrationDetail() {
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
-                <Text variant="headingMd" as="h2">
-                  Audit Trail
-                </Text>
+                <Text variant="headingMd" as="h2">Audit Trail</Text>
                 <Box background="bg-surface-secondary" padding="300" borderRadius="200">
                   <BlockStack gap="200">
                     {logs.map((log) => (

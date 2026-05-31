@@ -53,6 +53,7 @@ model MigrationJob {
   successItems    Int      @default(0)
   failedItems     Int      @default(0)
   errorLog        String?  @db.Text
+  parsedData      String?  @db.Text
   sourceFileName  String?
   startedAt       DateTime?
   completedAt     DateTime?
