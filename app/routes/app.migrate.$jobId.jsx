@@ -72,10 +72,14 @@ export const action = async ({ request, params }) => {
     data: { status: "processing", startedAt: new Date() },
   });
 
-  // Run with a fresh admin session from this real HTTP request
-  runMigrationJob(job.id, admin, parsedRows).catch((err) => {
-    console.error("Migration job error:", err);
-  });
+  // Await the migration synchronously so it completes before the response is sent
+  try {
+    console.log(`[migration] starting job ${job.id} with ${parsedRows.length} rows`);
+    await runMigrationJob(job.id, admin, parsedRows);
+    console.log(`[migration] job ${job.id} finished`);
+  } catch (err) {
+    console.error(`[migration] job ${job.id} threw:`, err);
+  }
 
   return json({ ok: true });
 };
